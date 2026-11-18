@@ -7,7 +7,6 @@ load_dotenv()
 
 username = os.getenv("USERNAME")
 password = os.getenv("PROJECT_PW")
-git rm --cached --ignore-unmatch .env
 client = Client()
 client.login(username, password)
 
