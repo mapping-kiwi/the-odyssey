@@ -11,4 +11,3 @@ client = Client()
 client.login(username, password)
 
 print("Successfully connected to Bluesky!")
-
