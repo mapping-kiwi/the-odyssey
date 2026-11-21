@@ -1,41 +1,63 @@
 import json
 from connect_bsky import client
-from config import TARGET, MAX_LIMIT, REQUEST_DELAY, PARAMS, RAW_JSON_PATH
 import time 
+from datetime import datetime, timedelta
+from config import (
+    TARGET, MAX_LIMIT, 
+    REQUEST_DELAY, 
+    PARAMS, 
+    RAW_JSON_PATH
+)
 
 posts = []
 seen = set()
-cursor = None
 
-while len(posts) < TARGET:
+start = datetime.fromisoformat(
+    PARAMS["since"].replace("Z", "+00:00")
+)
+
+end = datetime.fromisoformat(
+    PARAMS["until"].replace("Z", "+00:00")
+)
+
+current = start
+
+while current < end:
+    next_day = min(current + timedelta(days=1), end)
+
     params = PARAMS.copy()
+    params["since"] = current.isoformat()
+    params["until"] = next_day.isoformat()
+    params["limit"] = MAX_LIMIT
 
-    params["limit"] = min(MAX_LIMIT, TARGET - len(posts))
+    try:
+        response = client.app.bsky.feed.search_posts(params)
 
-    if cursor:
-        params["cursor"] = cursor
+        print(
+            current.date(),
+            "-",
+            len(response.posts),
+            "posts returned"
+        )
 
-    response = client.app.bsky.feed.search_posts(params)
+        if len(response.posts) == MAX_LIMIT:
+            print("Warning: daily results may be truncated")
 
-    for post in response.posts:
-        if post.uri not in seen:
-            posts.append(post)
-            seen.add(post.uri)
+        for post in response.posts:
+            if post.uri not in seen:
+                posts.append(post)
+                seen.add(post.uri)
 
-    print("Posts collected:", len(posts))
+    except Exception as error:
+        print("Request failed:", current.date(), error)
+        raise
 
-    if not response.cursor or response.cursor == cursor:
-        break
-
-    cursor = response.cursor
-
+    current = next_day
     time.sleep(REQUEST_DELAY)
 
-    print("Total posts retrieved:", len(posts))
-    
-data_path = RAW_JSON_PATH
+# Save candidate posts
+RAW_JSON_PATH.parent.mkdir(parents=True, exist_ok=True)
 
-# Export raw posts to JSON
 with open(RAW_JSON_PATH, "w", encoding="utf-8") as file:
     json.dump(
         [post.model_dump(mode="json") for post in posts],
@@ -44,4 +66,5 @@ with open(RAW_JSON_PATH, "w", encoding="utf-8") as file:
         ensure_ascii=False
     )
 
-print("JSON exported successfully")
+print("Total unique candidates:", len(posts))
+print("Saved to:", RAW_JSON_PATH)
